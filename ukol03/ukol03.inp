@@ -1,0 +1,310 @@
+#set echo off
+#set messages off
+
+open dataset.csv
+setobs 4 1991:2 --time-series
+
+ols pi_def-pi_def(-1) gap(-1) 
+
+
+xcorrgm gap pi_def   8 --plot=display
+
+# instrumenty
+list Zlist = pi_def(-1 to -4) gap(-1 to -4) ulc(-1 to -4) spread(-1 to -4) pi_w(-1 to -4) #pi_c(-1 to -4)
+matrix Z = {Zlist}
+
+matrix W = inv(Z'*Z) #matice vah pro prvni odhad GMM
+
+#pocatecni hodnoty parametru
+scalar lambda = 0.05
+scalar beta = 0.95 #diskontni faktor
+
+series e = 0
+
+# t2 - vpred redukovana
+gmm e = pi_def-lambda*ulc-beta*pi_def(+1)
+    orthog e; Z 
+    weights W 
+    params lambda beta 
+end gmm --iterate
+
+restrict
+    beta=1
+end restrict
+# beta neni statisticky vyznamne vyssi nez jedna
+
+# t3 - vpred redukovana gap
+gmm e = pi_def-lambda*gap-beta*pi_def(+1)
+    orthog e; Z
+    weights W
+    params lambda beta
+end gmm --iterate
+# zaporna lambda - nesedi s teorii - budeme pouzivat realne jednotkove naklady3
+
+# t4 - vpred strukturalni - podminka 1
+scalar theta = 0.5
+gmm e = theta*pi_def-(1-theta)*(1-beta*theta)*ulc-beta*theta*pi_def(+1)
+    orthog e; Z
+    weights W
+    params theta beta
+end gmm --iterate
+# fixni ceny na cca 4 obdobi - muze byt
+# beta > 1 - testujeme
+
+corrgm e --plot=display
+
+restrict
+    beta=1
+end restrict
+# beta statisticky vyznamne vyssi nez jedna na 10% hladine vyznamnosti!
+
+# t5 - vpred strukturalni - podminka 2
+gmm e = pi_def-theta^(-1)*(1-theta)*(1-beta*theta)*ulc-beta*pi_def(+1)
+    orthog e; Z
+    weights W
+    params theta beta
+end gmm --iterate
+# fixni ceny na cca 5 obdobi - taky muze byt
+# beta > 1 - testujeme
+# plus minus podobne vysledky jako pri predchozi specifikaci podminek ortogonality
+
+corrgm e --plot=display
+
+restrict
+    beta=1
+end restrict
+# beta neni statisticky vyznamne vyssi nez jedna
+
+# smysluplnejsi vysledky (co se beta koeficientu tyce) dostavame pro druhou podminku ortogonality
+# - budeme ji uprednostnovat i dal
+
+
+# t6 - hybrid redukovana
+scalar gamma_f = 0.6 #koeficient vpredhladiciho clenu (pi_def(+1))
+scalar gamma_b = 0.3 #koeficient vzadhladiciho clenu (pi_def(-1))
+
+gmm e = pi_def-lambda*ulc-gamma_f*pi_def(+1)-gamma_b*pi_def(-1)
+    orthog e; Z
+    weights W
+    params lambda gamma_f gamma_b
+end gmm --iterate
+# gammy by mely byt z intervalu <0;1>
+
+corrgm e --plot=display
+
+restrict
+    gamma_f = 1
+    gamma_b = 0
+end restrict
+# jsou
+
+# test gamma_b=0
+restrict --wald
+    gamma_b=0
+end restrict
+# test gamma_b+gamma_f=1 (pripadne zrejme z vystupu modelu)
+restrict --wald
+    gamma_b+gamma_f=1
+end restrict
+
+# t9 - hybrid redukovana + beta = 1
+# odhad modelu pre beta=1 (t.j. pre gamma_f+gamma_b=1)
+gmm e = pi_def-lambda*ulc-gamma_f*pi_def(+1)-(1-gamma_f)*pi_def(-1)
+    orthog e; Z
+    weights W
+    params lambda gamma_f # odhadneme len jeden z dvojice parametrov gamma_f, gamma_b, druhy je doplnok do 1
+end gmm --iterate
+
+# t8  - hybrid strukturalni - podminka 2
+scalar omega=0.5
+gmm e = pi_def-lambda*ulc-gamma_f*pi_def(+1)-gamma_b*pi_def(-1)
+    phi = theta+omega*(1-theta*(1-beta))
+    lambda = (1-omega)*(1-theta)*(1-beta*theta)*phi^(-1)
+    gamma_f = beta*theta*phi^(-1)
+    gamma_b = omega*phi^(-1)
+    orthog e; Z
+    weights W
+    params theta omega beta
+end gmm --iterate
+corrgm e --plot=display
+# ceny fixni na 5-6 obdobi, zadne zpetheldici firmy, otestujeme betu na = 1
+restrict
+    beta=1
+end restrict
+# nezamitame
+
+# t7 - hybrid strukturalni - podminka 1
+gmm e = phi*pi_def-lambda*ulc-gamma_f*pi_def(+1)-gamma_b*pi_def(-1)
+    phi = theta+omega*(1-theta*(1-beta))
+    lambda = (1-omega)*(1-theta)*(1-beta*theta)
+    gamma_f = beta*theta
+    gamma_b = omega
+    orthog e; Z
+    weights W
+    params theta omega beta
+end gmm --iterate
+# celkem nesmyslne vysledky - lepsi prezentovat druhou metodu normalizace podminek ortogonality - t8
+corrgm e --plot=display
+
+# t10 - hybrid strukturalni + beta = 1
+# odhad omedeneho modelu beta=1
+scalar beta = 1
+gmm e = pi_def-lambda*ulc-gamma_f*pi_def(+1)-gamma_b*pi_def(-1)
+    phi = theta+omega*(1-theta*(1-beta))
+    lambda = (1-omega)*(1-theta)*(1-beta*theta)*phi^(-1)
+    gamma_f = beta*theta*phi^(-1)
+    gamma_b = omega*phi^(-1)
+    orthog e; Z
+    weights W
+    params theta omega 
+end gmm --iterate
+# opet 5-6 ctvrtleti fix ceny, zadne zpethledici firmy
+
+
+# Uloha 4
+# NLS - hybrid redukovana
+
+scalar gamma_f = 0.6
+scalar gamma_b = 0.3
+nls pi_def = lambda*ulc+gamma_f*(pi_def(+1))+gamma_b*pi_def(-1)
+params lambda gamma_f gamma_b
+end nls
+V = $vcv
+print V
+# oproti gmm stat vyznamny podil zpethledicich firem (23 %) 
+
+# NLS - hybrid redukovana beta = 1
+
+LL_U1 = $lnl
+print LL_U1
+
+nls pi_def = lambda*ulc+gamma_f*(pi_def(+1))+(1-gamma_f)*pi_def(-1)
+params lambda gamma_f 
+end nls
+
+LL_R1 = $lnl
+print LL_R1
+
+# test LR
+
+LL1 = 2*(LL_U1-LL_R1)
+p_LL1 = pvalue(X,1,LL1)
+print LL1 p_LL1
+# nezamitame dlouhodobou vertikalitu (beta=1)
+
+# NLS - hybrid strukturalni
+
+scalar omega = 0.1
+scalar theta = 0.8
+scalar beta = 0.95
+nls pi_def = lambda*ulc+gamma_f*pi_def(+1)+gamma_b*pi_def(-1)
+phi = theta+omega*(1-theta*(1-beta))
+lambda = (1-omega)*(1-theta)*(1-beta*theta)*phi^(-1)
+gamma_f = beta*theta*phi^(-1)
+gamma_b = omega*phi^(-1)
+params theta omega beta
+end nls 
+
+LL_U2 = $lnl
+print LL_U2
+
+# NLS - hybrid strukturalni beta = 1
+
+scalar omega = 0.1
+scalar theta = 0.5
+scalar beta = 1
+nls pi_def = lambda*ulc+gamma_f*(pi_def(+1))+gamma_b*pi_def(-1)
+phi = theta+omega*(1-theta*(1-beta))
+lambda = (1-omega)*(1-theta)*(1-beta*theta)*phi^(-1)
+gamma_f = beta*theta*phi^(-1)
+gamma_b = omega*phi^(-1)
+params theta omega
+end nls
+
+LL_R2 = $lnl
+print LL_R2
+
+# test LR
+
+LL2 = 2*(LL_U2-LL_R2)
+p_LL2 = pvalue(X,1,LL2)
+print LL2 p_LL2
+#zamitame dlouhodobou vertikalitu, ale vysledky jsou dost pochybny - nekonecne strnule ceny
+# a uplne jine vysledky pro omega oproti gmm
+
+
+
+# MLE - hybrid redukovana
+
+scalar s2 = 1
+scalar gamma_f = 0.6
+scalar gamma_b = 0.3
+mle loglik = -1/2*log(2*pi)-1/2*log(s2)-1/(2*s2)*e^2
+    series e = pi_def - lambda*ulc - gamma_f*(pi_def(+1))-gamma_b*pi_def(-1)
+    params gamma_f gamma_b lambda s2
+end mle --hessian
+
+V=$vcv
+print V
+
+LL_U = $lnl
+
+# MLE - hybrid redukovana beta=1
+
+mle loglik = -1/2*log(2*pi)-1/2*log(s2)-1/(2*s2)*e^2
+    series e = pi_def - lambda*ulc - gamma_f*(pi_def(+1))-(1-gamma_f)*pi_def(-1)
+    params gamma_f lambda s2
+end mle --hessian
+
+LL_R = $lnl
+
+# LR test
+
+LL = 2*(LL_U-LL_R)
+p_LL = pvalue(X,1,LL)
+print LL p_LL
+
+# MLE - hybrid strukturalni
+
+scalar omega = 0.5
+scalar s2 = 1
+
+mle loglik = -1/2*log(2*pi)-1/2*log(s2)-1/(2*s2)*e^2
+    series e = pi_def - lambda*ulc - gamma_f*(pi_def(+1))-gamma_b*pi_def(-1)
+phi = theta+omega*(1-theta*(1-beta))
+lambda = (1-omega)*(1-theta)*(1-beta*theta)*phi^(-1)
+gamma_f = beta*theta*phi^(-1)
+gamma_b = omega*phi^(-1)
+params theta omega beta s2
+end mle --hessian
+
+LL_U2 = $lnl
+print LL_U2
+
+# MLE - hybrid strukturalni beta=1
+
+scalar beta = 1
+mle loglik = -1/2*log(2*pi)-1/2*log(s2)-1/(2*s2)*e^2
+    series e = pi_def - lambda*ulc - gamma_f*(pi_def(+1))-gamma_b*pi_def(-1)
+phi = theta+omega*(1-theta*(1-beta))
+lambda = (1-omega)*(1-theta)*(1-beta*theta)*phi^(-1)
+gamma_f = beta*theta*phi^(-1)
+gamma_b = omega*phi^(-1)
+params theta omega s2 
+end mle --hessian
+
+LL_R2 = $lnl
+print LL_R2
+
+# LR test
+
+LL2 = (2*(LL_U2-LL_R2) > 0) * 2*(LL_U2-LL_R2)# zaokrouhlovaci chyba
+p_LL2 = pvalue(X,1,LL2)
+print LL2 p_LL2
+
+# stejne divne vysledky jako u nls 
+# - tyto modely zrejme dobre nepopisuji data generujici proces
+
+
+
+
