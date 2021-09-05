@@ -1,5 +1,5 @@
 
-setwd('ukol02')
+#setwd('ukol02')
 rm(list = ls())
 
 # libraries
