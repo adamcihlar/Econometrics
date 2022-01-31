@@ -1,5 +1,5 @@
-### MPE_EKON
-Contains codes, tasks, data for projects for course **Econometrics** (spring 2021).
+### Econometrics
+Contains codes, tasks, data and final reports of projects for course **Econometrics** (MPE_EKON) taken in spring 2021.
 
 1. Capital assets pricing model
 2. Okun's law
